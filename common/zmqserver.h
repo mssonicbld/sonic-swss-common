@@ -13,7 +13,7 @@
 #define MQ_WATERMARK 10000
 
 /***** ZMQ PORT *****/
-static const int ORCH_ZMQ_PORT = 8020;
+static const int ORCH_ZMQ_PORT = 8100;
 
 namespace swss {
 
@@ -31,6 +31,8 @@ public:
     static constexpr int DEFAULT_POP_BATCH_SIZE = 128;
 
     ZmqServer(const std::string& endpoint);
+    ZmqServer(const std::string& endpoint, const std::string& vrf);
+    ZmqServer(const std::string& endpoint, const std::string& vrf, bool lazyBind);
     ~ZmqServer();
 
     void registerMessageHandler(
@@ -38,8 +40,15 @@ public:
                                 const std::string tableName,
                                 ZmqMessageHandler* handler);
 
+    void sendMsg(const std::string& dbName, const std::string& tableName,
+        const std::vector<swss::KeyOpFieldsValuesTuple>& values);
+
+    void bind();
+
 private:
     void handleReceivedData(const char* buffer, const size_t size);
+
+    void startMqPollThread();
 
     void mqPollThread();
     
@@ -52,6 +61,12 @@ private:
     std::shared_ptr<std::thread> m_mqPollThread;
 
     std::string m_endpoint;
+
+    std::string m_vrf;
+
+    void* m_context;
+
+    void* m_socket;
 
     std::map<std::string, std::map<std::string, ZmqMessageHandler*>> m_HandlerMap;
 };

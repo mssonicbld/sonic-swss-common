@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "common/dbconnector.h"
+#include "common/c-api/util.h"
 #include <iostream>
 
 using namespace std;
@@ -8,7 +9,7 @@ using namespace swss;
 string existing_file = "./tests/redis_multi_db_ut_config/database_config.json";
 string nonexisting_file = "./tests/redis_multi_db_ut_config/database_config_nonexisting.json";
 string global_existing_file = "./tests/redis_multi_db_ut_config/database_global.json";
-
+string global_with_invalid_include = "./tests/redis_multi_db_ut_config/database_global_with_invalid_include.json";
 #define TEST_DB  "APPL_DB"
 #define TEST_NAMESPACE  "asic0"
 #define INVALID_NAMESPACE  "invalid"
@@ -54,6 +55,29 @@ public:
             EXPECT_TRUE(strstr(e.what(), "Initialize global DB config using API SonicDBConfig::initializeGlobalConfig"));
         }
 
+        // Test the global SonicDBConfig::initializeGlobalConfig with non-existing include
+        SonicDBConfig::initializeGlobalConfig(global_with_invalid_include, true);
+        cout<<"INIT: load global db config file with invalid include, isGlobalInit = "<<SonicDBConfig::isGlobalInit()<<endl;
+        EXPECT_TRUE(SonicDBConfig::isGlobalInit());
+        vector<SonicDBKey> db_keys = SonicDBConfig::getDbKeys();
+
+        // Extract containerName from SonicDBKey in db_keys and store in vector<string>
+        vector<string> cn_actual;
+        for (const auto& key : db_keys) {
+            cn_actual.push_back(key.containerName);
+        }
+
+        sort (cn_actual.begin(), cn_actual.end());
+        vector<string> cn_expected = {"", "dpu0", "dpu2"};
+        // verify the non-existent include is skipped
+        EXPECT_EQ(cn_actual.size(), cn_expected.size());
+        EXPECT_TRUE(std::equal(cn_expected.begin(), cn_expected.end(), cn_actual.begin()));
+        // reset SonicDBConfig, init should be false
+        SonicDBConfig::reset();
+        cout<<"RESET: isInit = "<<SonicDBConfig::isInit()<<endl;
+        EXPECT_FALSE(SonicDBConfig::isInit());
+        EXPECT_FALSE(SonicDBConfig::isGlobalInit());
+
         // load local global file, init should be true
         SonicDBConfig::initializeGlobalConfig(global_existing_file);
         cout<<"INIT: load global db config file, isInit = "<<SonicDBConfig::isGlobalInit()<<endl;
@@ -67,9 +91,23 @@ public:
         }
         catch (exception &e)
         {
-            EXPECT_TRUE(strstr(e.what(), "Namespace invalid is not a valid namespace name in config file"));
+            // EXPECT_TRUE(strstr(e.what(), "Key :invalid invalid is not a valid key name in config file"));
+            EXPECT_STREQ(e.what(), "Key :invalid is not a valid key name in config file");
         }
 
+        // reset SonicDBConfig, init should be false
+        SonicDBConfig::reset();
+        cout<<"RESET: isInit = "<<SonicDBConfig::isInit()<<endl;
+        EXPECT_FALSE(SonicDBConfig::isInit());
+        EXPECT_FALSE(SonicDBConfig::isGlobalInit());
+
+        // reinitialize SonicDBConfig, init should be true
+        SonicDBConfig::initialize(existing_file);
+        cout<<"INIT: load local db config file, isInit = "<<SonicDBConfig::isInit()<<endl;
+        EXPECT_TRUE(SonicDBConfig::isInit());
+        SonicDBConfig::initializeGlobalConfig(global_existing_file);
+        cout<<"INIT: load global db config file, isInit = "<<SonicDBConfig::isGlobalInit()<<endl;
+        EXPECT_TRUE(SonicDBConfig::isGlobalInit());
     }
 };
 

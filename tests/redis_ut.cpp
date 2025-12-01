@@ -3,6 +3,8 @@
 #include <thread>
 #include <algorithm>
 #include <deque>
+#include <system_error>
+#include <gmock/gmock.h>
 #include "gtest/gtest.h"
 #include "common/dbconnector.h"
 #include "common/producertable.h"
@@ -10,6 +12,7 @@
 #include "common/notificationconsumer.h"
 #include "common/notificationproducer.h"
 #include "common/redisclient.h"
+#include "common/redisreply.h"
 #include "common/select.h"
 #include "common/selectableevent.h"
 #include "common/selectabletimer.h"
@@ -20,6 +23,7 @@
 
 using namespace std;
 using namespace swss;
+using namespace testing;
 
 #define NUMBER_OF_THREADS   (64) // Spawning more than 256 threads causes libc++ to except
 #define NUMBER_OF_OPS     (1000)
@@ -326,6 +330,7 @@ TEST(DBConnector, DBInterface)
     db.set("TEST_DB", "key0", "field1", "value2");
     auto fvs = db.get_all("TEST_DB", "key0");
     auto rc = fvs.find("field1");
+    db.close();
     EXPECT_NE(rc, fvs.end());
     EXPECT_EQ(rc->second, "value2");
 }
@@ -527,6 +532,33 @@ TEST(DBConnector, HmsetAndDel)
     {
         auto fvs = db.hgetall(key);
         EXPECT_EQ(fvs.size(), 0);
+    }
+}
+
+TEST(DBConnector, DelMultipleKeys)
+{
+    DBConnector db("TEST_DB", 0, true);
+    clearDB();
+
+    vector<size_t> num_keys = {1, 128, 300};
+    vector<string> keys;
+    for (size_t i = 0; i < num_keys.size(); ++i)
+    {
+        size_t num_key = num_keys[i];
+        if (i > 0)
+        {
+            keys.clear();
+        }
+        for (size_t j = 0; j < num_key; ++j)
+        {
+            string key = "hash_key_" + to_string(j);
+            db.set(key, "value");
+            keys.push_back(key);
+        }
+        EXPECT_EQ(db.keys("*").size(), num_key);
+
+        db.del(keys);
+        EXPECT_EQ(db.keys("*").size(), 0);
     }
 }
 
@@ -851,8 +883,8 @@ TEST(Table, binary_data_get)
     DBConnector db("TEST_DB", 0, true);
     Table table(&db, "binary_data");
 
-    const char* bindata1 = "\x11\x00\x22\x33\x44";
-    const char* bindata2 = "\x11\x22\x33\x00\x44";
+    const char bindata1[] = "\x11\x00\x22\x33\x44";
+    const char bindata2[] = "\x11\x22\x33\x00\x44";
     auto v1 = std::string(bindata1, sizeof(bindata1));
     auto v2 = std::string(bindata2, sizeof(bindata2));
     vector<FieldValueTuple> values_set = {
@@ -1137,4 +1169,62 @@ TEST(Connector, hmset)
 
     // test empty multi hash
     db.hmset({});
+}
+
+TEST(Connector, connectFail)
+{
+    // connect to an ip which is not a redis server
+    EXPECT_THROW({
+        try
+        {
+            DBConnector db(0, "1.1.1.1", 6379, 1);
+        }
+        catch(const std::system_error& e)
+        {
+            EXPECT_THAT(e.what(), HasSubstr("Unable to connect to redis - "));
+            throw;
+        }
+    }, std::system_error);
+
+    // connect to an invalid unix socket address
+    EXPECT_THROW({
+        try
+        {
+            DBConnector db(0, "/tmp/invalid", 1);
+        }
+        catch(const std::system_error& e)
+        {
+            EXPECT_THAT(e.what(), HasSubstr("Unable to connect to redis (unix-socket) - "));
+            throw;
+        }
+    }, std::system_error);
+}
+
+TEST(Redisreply, guard)
+{
+    // Improve test coverage for guard() method.
+    string command = "test";
+    EXPECT_THROW({
+        try
+        {
+            guard([&]{throw system_error(make_error_code(errc::io_error), "LOADING Redis is loading the dataset in memory");}, command.c_str());
+        }
+        catch(const std::system_error& e)
+        {
+            EXPECT_THAT(e.what(), HasSubstr("LOADING Redis is loading the dataset in memory"));
+            throw;
+        }
+    }, std::system_error);
+
+    EXPECT_THROW({
+        try
+        {
+            guard([&]{throw system_error(make_error_code(errc::io_error), "Command failed");}, command.c_str());
+        }
+        catch(const std::system_error& e)
+        {
+            EXPECT_THAT(e.what(), HasSubstr("Command failed"));
+            throw;
+        }
+    }, std::system_error);
 }

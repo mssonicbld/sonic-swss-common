@@ -29,7 +29,7 @@ jobs:
   timeoutInMinutes: ${{ parameters.timeout }}
 
   pool:
-    vmImage: 'ubuntu-20.04'
+    vmImage: 'ubuntu-22.04'
 
   steps:
   - checkout: self
@@ -49,6 +49,18 @@ jobs:
       artifact: ${{ parameters.swss_artifact_name }}
       path: $(Build.ArtifactStagingDirectory)/download
     displayName: "Download pre-stage built ${{ parameters.swss_artifact_name }}"
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      source: specific
+      project: build
+      pipeline: sonic-net.sonic-dash-api
+      artifact: sonic-dash-api
+      runVersion: 'latestFromBranch'
+      runBranch: 'refs/heads/$(BUILD_BRANCH)'
+      path: $(Build.ArtifactStagingDirectory)/download
+      patterns: |
+        libdashapi*.deb
+    displayName: "Download dash api"
   - task: DownloadPipelineArtifact@2
     inputs:
       source: specific

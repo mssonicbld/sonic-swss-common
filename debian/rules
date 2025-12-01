@@ -28,6 +28,13 @@ else
 CONFIGURE_ARGS += --disable-python2
 endif
 
+# Skip compiling classes that depend on libyang
+ifneq (,$(filter noyangmod,$(DEB_BUILD_PROFILES)))
+CONFIGURE_ARGS += --disable-yangmodules
+else
+CONFIGURE_ARGS += --enable-yangmodules
+endif
+
 # main packaging script
 %:
 	dh $@
@@ -37,3 +44,11 @@ endif
 override_dh_auto_configure:
 	dh_auto_configure -- $(CONFIGURE_ARGS) $(DEB_CONFIGURE_EXTRA_FLAGS)
 #	-DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)
+
+override_dh_auto_build:
+	dh_auto_build
+	SWSS_COMMON_REPO=$(CURDIR) cargo build --release --all
+
+override_dh_auto_clean:
+	dh_auto_clean
+	cargo clean --release
